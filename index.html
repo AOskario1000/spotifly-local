@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotifly — Local</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%231ed760'/%3E%3Cpath d='M6.6 9.1c3.9-1.2 8.2-.8 11.4 1.2' stroke='%23000' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3Cpath d='M7.2 12.4c3.2-1 6.9-.6 9.6 1' stroke='%23000' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3Cpath d='M7.8 15.5c2.5-.7 5.4-.4 7.5.8' stroke='%23000' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=web2">
+</head>
+<body>
+<div id="shell">
+  <aside id="sidebar">
+    <div class="panel nav-panel">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" class="logo"><circle cx="12" cy="12" r="12" fill="#1ed760"/><path d="M6.6 9.1c3.9-1.2 8.2-.8 11.4 1.2" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M7.2 12.4c3.2-1 6.9-.6 9.6 1" stroke="#000" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M7.8 15.5c2.5-.7 5.4-.4 7.5.8" stroke="#000" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+        <span>Spotifly</span>
+      </div>
+      <button class="nav-item" id="nav-home" data-act="nav" data-view="home">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2.5 11.4h2.8V21h5.2v-5.6h3V21h5.2v-9.6h2.8L12 3z"/></svg>Home
+      </button>
+      <button class="nav-item" id="nav-search" data-act="nav" data-view="search">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.5 3a7.5 7.5 0 1 1-4.6 13.44l-3.18 3.18-1.42-1.42 3.18-3.18A7.5 7.5 0 0 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z"/></svg>Search
+      </button>
+      <button class="nav-item dj-nav" id="nav-dj" data-act="open-dj">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9l-5.6 1.9L12 16.5l-1.9-5.6L4.5 9l5.6-1.4L12 2zm6.5 11 .9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9.9-2.6zM5.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"/></svg>AI DJ
+      </button>
+      <button class="nav-item subtle" id="nav-rescan" data-act="rescan">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>Rescan library
+      </button>
+    </div>
+
+    <div class="panel library-panel">
+      <div class="lib-head">
+        <button class="lib-title" data-act="nav" data-view="library">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-9 11V5l6 4-6 4zM4 6H2v14a2 2 0 0 0 2 2h14v-2H4V6z"/></svg>
+          Your Library
+        </button>
+        <button class="icon-btn tiny" data-act="rescan" title="Rescan library">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        </button>
+      </div>
+      <div class="lib-list" id="lib-list"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header class="topbar" id="topbar">
+      <div class="arrows">
+        <button class="round" data-act="back" id="btn-back" title="Go back">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.7 5.3 8 12l6.7 6.7 1.4-1.4L10.8 12l5.3-5.3-1.4-1.4z"/></svg>
+        </button>
+        <button class="round" data-act="forward" id="btn-forward" title="Go forward">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.3 5.3 15.9 12l-6.6 6.7-1.4-1.4L13.2 12 7.9 6.7l1.4-1.4z"/></svg>
+        </button>
+      </div>
+      <label class="searchbox">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.5 3a7.5 7.5 0 1 1-4.6 13.44l-3.18 3.18-1.42-1.42 3.18-3.18A7.5 7.5 0 0 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z"/></svg>
+        <input id="search" type="text" placeholder="What do you want to play?" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="top-right">
+        <button class="icon-btn" data-act="open-settings" title="Settings">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.4 13a7.5 7.5 0 0 0 .1-1 7.5 7.5 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.6 7.6 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.6 7.6 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+        </button>
+        <span class="pill">Local library</span>
+        <div class="avatar" title="You">S</div>
+      </div>
+    </header>
+    <div id="view"></div>
+  </main>
+
+  <footer id="player">
+    <div class="np">
+      <div class="np-art" id="np-art"></div>
+      <div class="np-meta">
+        <div class="np-title" id="np-title">Nothing playing</div>
+        <div class="np-artist" id="np-artist">Pick a song to start</div>
+      </div>
+      <button class="icon-btn np-like" id="np-like" data-act="like-current" title="Save to Liked Songs">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+      </button>
+    </div>
+    <div class="pc">
+      <div class="pc-btns">
+        <button class="icon-btn" id="btn-shuffle" data-act="shuffle" title="Shuffle">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+        </button>
+        <button class="icon-btn" data-act="prev" title="Previous">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h2v16H6zM19 4.3v15.4L8.3 12z"/></svg>
+        </button>
+        <button class="playbtn" id="btn-play" data-act="toggle-play" title="Play">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="play-icon"><path d="M7.05 3.606 20.54 11.394a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606z"/></svg>
+        </button>
+        <button class="icon-btn" data-act="next" title="Next">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 4h-2v16h2zM5 4.3v15.4L15.7 12z"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-repeat" data-act="repeat" title="Repeat">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+        </button>
+      </div>
+      <div class="seekrow">
+        <span class="time" id="t-cur">0:00</span>
+        <div class="bar seek" id="seek"><div class="fill"></div><div class="knob"></div></div>
+        <span class="time" id="t-dur">0:00</span>
+      </div>
+    </div>
+    <div class="pv">
+      <button class="icon-btn" data-act="queue" title="Queue">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h12v2H3V6zm0 5h12v2H3v-2zm0 5h8v2H3v-2zm14-9v8.1a3 3 0 1 0 2 2.8V7h3V5h-5z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-mute" data-act="mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="currentColor" id="vol-icon"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+      </button>
+      <div class="bar vol" id="vol"><div class="fill"></div><div class="knob"></div></div>
+      <button class="icon-btn" data-act="expand" title="Full screen">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h6v2H6v4H4V4zm16 0v6h-2V6h-4V4h6zM4 20v-6h2v4h4v2H4zm16 0h-6v-2h4v-4h2v6z"/></svg>
+      </button>
+    </div>
+  </footer>
+</div>
+
+<div class="queue-drawer hidden" id="queue-drawer">
+  <div class="q-head">
+    <h3>Queue</h3>
+    <div class="q-actions">
+      <button class="icon-btn small" data-act="save-queue" title="Save queue as playlist">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+      </button>
+      <button class="icon-btn small" data-act="clear-queue" title="Clear queue">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9zm3 2v9h2v-9H9zm4 0v9h2v-9h-2z"/></svg>
+      </button>
+      <button class="icon-btn small" data-act="close-queue" title="Close">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6 6.4 5z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="q-list" id="q-list"></div>
+</div>
+
+
+
+<div class="modal-backdrop hidden" id="ai-playlist-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-playlist-title">
+    <div class="modal-head">
+      <h2 id="ai-playlist-title">Create an AI playlist</h2>
+      <button class="icon-btn" data-act="close-ai-playlist" title="Close">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6 6.4 5z"/></svg>
+      </button>
+    </div>
+    <p class="modal-sub">Describe the vibe. The web build picks tracks from your scanned folder and names the playlist.</p>
+    <label class="field"><span>Playlist idea</span><input id="ai-playlist-prompt" maxlength="160" placeholder="late-night edits, slowed favorites..." autocomplete="off"></label>
+    <div class="ai-suggestions">
+      <button class="chip" data-act="ai-suggest" data-text="Late-night edits and slowed favorites">Late-night edits</button>
+      <button class="chip" data-act="ai-suggest" data-text="German party and hype songs">German party</button>
+      <button class="chip" data-act="ai-suggest" data-text="French chill and love songs">French chill</button>
+      <button class="chip" data-act="ai-suggest" data-text="Workout energy, fast and aggressive">Workout</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-act="close-ai-playlist">Cancel</button>
+      <button class="btn green" id="ai-playlist-run" data-act="run-ai-playlist">Create</button>
+    </div>
+    <div id="ai-playlist-result" class="import-result"></div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop hidden" id="settings-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn" data-act="close-settings" title="Close">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6 6.4 5z"/></svg>
+      </button>
+    </div>
+    <label class="switch-row">
+      <div>
+        <b>Debug mode</b>
+        <span class="row-sub">Show the Debug view, per-track MAEST labels in track rows, and the last DJ/playlist retrieval details.</span>
+      </div>
+      <span class="switch"><input type="checkbox" id="debug-toggle"><span class="slider"></span></span>
+    </label>
+    <div id="settings-stats"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-act="open-debug-view">Open Debug view</button>
+      <button class="btn green" data-act="close-settings">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="import-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+    <div class="modal-head">
+      <h2 id="import-title">Import a Spotify playlist</h2>
+      <button class="icon-btn" data-act="close-import" title="Close">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6 6.4 5z"/></svg>
+      </button>
+    </div>
+    <p class="modal-sub">Export the playlist as CSV (Exportify works), then choose the file. Spotifly matches it against your local files — audio stays on your machine, and missing tracks are listed for you.</p>
+    <label class="field"><span>Playlist name</span><input id="import-name" maxlength="80" placeholder="On Repeat" autocomplete="off"></label>
+    <label class="filedrop">
+      <input type="file" id="import-file" accept=".csv,text/csv">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v9.2l3.6-3.6 1.4 1.4-6 6-6-6 1.4-1.4L11 12.2V3zM5 18h14v2H5z"/></svg>
+      <span id="import-file-label">Choose a CSV file</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn ghost" data-act="close-import">Cancel</button>
+      <button class="btn green" id="import-run" data-act="run-import" disabled>Import</button>
+    </div>
+    <div id="import-result" class="import-result"></div>
+  </div>
+</div>
+
+<div class="row-menu hidden" id="row-menu"></div>
+
+<div id="toast" class="toast"></div>
+<script src="jsmediatags.min.js"></script>
+<script src="local.js?v=web2"></script>
+<script src="app.js?v=web2"></script>
+</body>
+</html>
