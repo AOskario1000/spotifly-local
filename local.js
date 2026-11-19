@@ -501,7 +501,17 @@
     const base = (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase();
     const plays = Number(body && body.history && body.history[t.id] && body.history[t.id].count) || 0;
     const liked = Array.isArray(body && body.likes) && body.likes.includes(t.id);
+    const fb = (body && body.feedback) || {};
+    if (Array.isArray(fb.never) && fb.never.includes(t.id)) return -1000;
+    const f = fb.tracks && fb.tracks[t.id];
     let score = Math.random() * 1.5 + Math.min(5, plays * 0.6) + (liked ? 2 : 0);
+    if (f) {
+      if (Number(f.plays)) score += Math.min(3, Number(f.plays) * 0.4);
+      if (Number(f.skips)) score -= Math.min(9, Number(f.skips) * 3);
+    }
+    if (Array.isArray(fb.lessArtists) && fb.lessArtists.some((a) => String(a).toLowerCase() === String(t.artist).toLowerCase())) score -= 14;
+    const genre = String(t.genre || '').toLowerCase();
+    if (genre && Array.isArray(fb.lessGenres) && fb.lessGenres.some((g) => String(g).toLowerCase() === genre)) score -= 8;
     for (const tok of toks) if (base.includes(tok)) score += 6;
     if (req.length > 4 && base.includes(req)) score += 6;
     if (body && body.currentId) {
@@ -516,7 +526,8 @@
 
   function pickSet(body, count) {
     const exclude = new Set(Array.isArray(body && body.exclude) ? body.exclude : []);
-    const pool = state.library.tracks.filter((t) => !exclude.has(t.id));
+    const never = new Set(Array.isArray(body && body.feedback && body.feedback.never) ? body.feedback.never : []);
+    const pool = state.library.tracks.filter((t) => !exclude.has(t.id) && !never.has(t.id));
     const ranked = (pool.length >= count ? pool : state.library.tracks)
       .map((t) => ({ t, score: scoreFor(t, body) }))
       .sort((a, b) => b.score - a.score);
@@ -560,7 +571,7 @@
   function offlinePlaylist(body) {
     const prompt = clip(body && body.prompt, 160);
     if (!prompt) return { error: 'Describe the playlist first' };
-    const tracks = pickSet({ request: prompt }, 12);
+    const tracks = pickSet({ request: prompt, feedback: body && body.feedback }, 12);
     const words = prompt.replace(/[^a-z0-9 ]/gi, ' ').split(/\s+/).filter(Boolean).slice(0, 4);
     const name = (words.map((w) => w[0] ? w[0].toUpperCase() + w.slice(1) : w).join(' ') || 'Offline Mix').slice(0, 40);
     const pl = {
@@ -675,4 +686,10 @@
   }
 
   state.ready = init().catch(() => {});
+
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
 })();

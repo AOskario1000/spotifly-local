@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121212">
 <title>Spotifly — Local</title>
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%231ed760'/%3E%3Cpath d='M6.6 9.1c3.9-1.2 8.2-.8 11.4 1.2' stroke='%23000' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3Cpath d='M7.2 12.4c3.2-1 6.9-.6 9.6 1' stroke='%23000' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3Cpath d='M7.8 15.5c2.5-.7 5.4-.4 7.5.8' stroke='%23000' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=web2">
+<link rel="stylesheet" href="style.css?v=web3">
 </head>
 <body>
 <div id="shell">
@@ -181,6 +183,7 @@
     <div id="settings-stats"></div>
     <div class="modal-actions">
       <button class="btn ghost" data-act="open-debug-view">Open Debug view</button>
+      <button class="btn ghost" data-act="clear-dj-feedback">Clear DJ feedback</button>
       <button class="btn green" data-act="close-settings">Done</button>
     </div>
   </div>
@@ -213,7 +216,7 @@
 
 <div id="toast" class="toast"></div>
 <script src="jsmediatags.min.js"></script>
-<script src="local.js?v=web2"></script>
-<script src="app.js?v=web2"></script>
+<script src="local.js?v=web3"></script>
+<script src="app.js?v=web3"></script>
 </body>
 </html>

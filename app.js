@@ -1,7 +1,5 @@
 'use strict';
 
-const STATIC = !!window.STATIC_MODE;
-
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
@@ -38,6 +36,10 @@ const S = {
   hi: 0,
   query: '',
   searchIds: [],
+  searchFilter: 'all',
+  searchSource: '',
+  searchSemantic: null,
+  searchBusy: false,
   libTab: 'playlists',
   liked: new Set(),
   mixes: [],
@@ -71,6 +73,9 @@ const S = {
   debug: false,
   debugData: null,
   debugQuery: '',
+  settingsAi: null,
+  indexHealth: null,
+  indexTimer: null,
   debugLoading: false,
   djStatus: null,
   djBusy: false,
@@ -79,6 +84,7 @@ const S = {
   pendingCount: false,
   lastDjHighlight: null,
   dj: { active: false, source: null, model: null, intro: '', reply: '', request: '', outro: '', tracks: [], lines: {}, mood: '', startedAt: 0, retrieval: 0, fetching: false },
+  djFeedback: { tracks: {}, never: [], lessArtists: [], lessGenres: [] },
   audio: new Audio(),
 };
 
@@ -364,6 +370,79 @@ function bumpPlay(id) {
   S.history.unshift({ id, at: Date.now() });
   if (S.history.length > 1000) S.history.length = 1000;
   saveHistory();
+  bumpFeedbackPlay(id);
+}
+
+function saveDjFeedback() {
+  try { localStorage.setItem('spotifly:djFeedback', JSON.stringify(S.djFeedback)); } catch { /* ignore */ }
+}
+
+function fbEntry(id) {
+  if (!S.djFeedback.tracks[id]) S.djFeedback.tracks[id] = { plays: 0, skips: 0, last: 0 };
+  return S.djFeedback.tracks[id];
+}
+
+function bumpFeedbackPlay(id) {
+  const f = fbEntry(id);
+  f.plays = (f.plays || 0) + 1;
+  f.last = Date.now();
+  saveDjFeedback();
+}
+
+function bumpFeedbackSkip(id) {
+  if (!id) return;
+  const f = fbEntry(id);
+  f.skips = (f.skips || 0) + 1;
+  f.last = Date.now();
+  saveDjFeedback();
+}
+
+function toggleNever(id) {
+  if (!id) return;
+  const i = S.djFeedback.never.indexOf(id);
+  if (i >= 0) {
+    S.djFeedback.never.splice(i, 1);
+    toast('Allowed again');
+  } else {
+    S.djFeedback.never.push(id);
+    toast('Never play again — banned for the DJ');
+  }
+  saveDjFeedback();
+}
+
+function feedbackGenre(t) {
+  if (!t) return '';
+  if (t.tags && t.tags.genres && t.tags.genres.length) return t.tags.genres[0];
+  if (t.genre) return t.genre;
+  if (t.audio && t.audio.labels && t.audio.labels.length) {
+    return String(t.audio.labels[0].label || '').replace(/---/g, ' ').split(' ').slice(0, 3).join(' ');
+  }
+  return '';
+}
+
+function toggleLess(kind, id) {
+  const t = S.trackById.get(id);
+  if (!t) return;
+  const artist = kind === 'artist';
+  const value = artist ? t.artist : feedbackGenre(t);
+  if (!value) { toast('No genre available for this track'); return; }
+  const list = artist ? S.djFeedback.lessArtists : S.djFeedback.lessGenres;
+  const i = list.findIndex((x) => String(x).toLowerCase() === String(value).toLowerCase());
+  if (i >= 0) {
+    list.splice(i, 1);
+    toast('Allowed again: ' + value);
+  } else {
+    list.push(value);
+    toast((artist ? 'Less of artist: ' : 'Less of genre: ') + value);
+  }
+  saveDjFeedback();
+}
+
+function clearDjFeedback() {
+  if (!window.confirm('Clear DJ feedback (skips, plays, bans, artist/genre filters)?')) return;
+  S.djFeedback = { tracks: {}, never: [], lessArtists: [], lessGenres: [] };
+  saveDjFeedback();
+  toast('DJ feedback cleared');
 }
 
 function onRepeatIds() {
@@ -651,9 +730,9 @@ function heroHTML(c) {
 function viewHome() {
   if (!S.tracks.length) {
     return `<div class="empty" style="padding-top:120px">
-      <h3>${STATIC ? 'Connect your music folder' : 'Your library is empty'}</h3>
-      <p>${STATIC ? 'Choose a folder on this disk. The browser scans it locally — nothing is uploaded.' : 'No music found yet. Connect your SSD and rescan, or add files to your Music folder.'}</p>
-      <button class="btn green" data-act="rescan">${ICON.refresh} ${STATIC ? 'Choose music folder' : 'Rescan library'}</button>
+      <h3>Your library is empty</h3>
+      <p>No music found yet. Connect your SSD and rescan, or add files to your Music folder.</p>
+      <button class="btn green" data-act="rescan">${ICON.refresh} Rescan library</button>
     </div>`;
   }
   const hour = new Date().getHours();
@@ -720,6 +799,93 @@ function viewHome() {
   </div>`;
 }
 
+function searchNorm(v) {
+  return String(v || '').toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function editDistance(a, b, max) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      cur.push(v);
+      if (v < best) best = v;
+    }
+    if (best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function fuzzyScore(text, query) {
+  const hay = searchNorm(text);
+  const q = searchNorm(query);
+  if (!q) return 0;
+  if (hay === q) return 120;
+  if (hay.startsWith(q)) return 100;
+  if (hay.includes(q)) return 80;
+  const tokens = q.split(' ').filter(Boolean);
+  const words = hay.split(' ').filter(Boolean);
+  let score = 0;
+  let hits = 0;
+  for (const tok of tokens) {
+    if (hay.includes(tok)) { score += 12; hits++; continue; }
+    if (tok.length >= 5) {
+      const max = tok.length >= 8 ? 2 : 1;
+      if (words.some((w) => Math.abs(w.length - tok.length) <= max && editDistance(w, tok, max) <= max)) {
+        score += 7;
+        hits++;
+      }
+    }
+  }
+  return hits ? score + (hits === tokens.length ? 10 : 0) : 0;
+}
+
+async function runSemanticSearch() {
+  const q = S.query.trim();
+  if (!q || S.searchBusy) return;
+  S.searchBusy = true;
+  render(false);
+  try {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=40');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'search failed');
+    S.searchSemantic = { q, ids: (j.results || []).map((x) => x.id), model: j.model || null };
+    if (!S.searchSemantic.ids.length) toast('No semantic matches');
+  } catch (e) {
+    S.searchSemantic = { q, ids: [], error: String(e.message || e) };
+    toast('Semantic search unavailable');
+  } finally {
+    S.searchBusy = false;
+    render(false);
+  }
+}
+
+function searchToolsHTML() {
+  const tab = S.searchFilter;
+  const sources = ['', ...S.sources.map((s) => s.name)];
+  const opts = sources.map((s) => `<option value="${esc(s)}" ${S.searchSource === s ? 'selected' : ''}>${esc(s || 'All sources')}</option>`).join('');
+  const semantic = S.searchSemantic && S.searchSemantic.q === S.query.trim() ? S.searchSemantic : null;
+  return `<div class="search-tools">
+    <div class="chip-row">
+      ${['all', 'tracks', 'albums', 'artists'].map((x) => `<button class="chip ${tab === x ? 'active' : ''}" data-act="search-filter" data-filter="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}
+    </div>
+    <select id="search-source" class="search-source" title="Filter by source">${opts}</select>
+    ${window.STATIC_MODE ? '' : `<button class="btn ghost" data-act="search-semantic" ${S.searchBusy ? 'disabled' : ''}>${S.searchBusy ? 'Matching…' : semantic ? 'Refresh AI match' : 'AI match'}</button>`}
+  </div>
+  ${semantic ? (semantic.error
+    ? `<div class="small-note">AI search: ${esc(semantic.error)}</div>`
+    : semantic.ids.length
+      ? `<div class="section-h2">AI matches${semantic.model ? ' · ' + esc(semantic.model) : ''}</div>${trackTable(semantic.ids.slice(0, 20), 'search')}`
+      : '<div class="small-note">No semantic matches for this query.</div>') : ''}`;
+}
+
 function viewSearch() {
   const q = S.query.trim();
   if (!q) {
@@ -736,27 +902,54 @@ function viewSearch() {
     </div>`;
   }
 
-  const ql = q.toLowerCase();
-  const tracks = S.tracks.filter((t) => `${t.title} ${t.artist} ${t.album} ${trackTags(t)}`.toLowerCase().includes(ql));
-  const albums = S.albums.filter((a) => `${a.name} ${a.artist}`.toLowerCase().includes(ql));
-  const artists = S.artists.filter((a) => a.toLowerCase().includes(ql));
-  S.searchIds = tracks.map((t) => t.id);
+  const ql = searchNorm(q);
+  const sourceOk = (t) => !S.searchSource || t.source === S.searchSource;
+  const scoredTracks = S.tracks.filter(sourceOk).map((t) => {
+    const score = fuzzyScore(`${t.title} ${t.artist} ${t.album} ${trackTags(t)}`, q);
+    return { t, score };
+  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score || b.t.addedAt - a.t.addedAt);
+  const tracks = scoredTracks.map((x) => x.t);
 
-  if (!tracks.length && !albums.length && !artists.length) {
-    return `<div class="empty" style="padding-top:80px"><h3>No results found for “${esc(q)}”</h3><p>Try a different artist, song, or album name.</p></div>`;
+  const trackArtistScore = new Map();
+  const trackAlbumScore = new Map();
+  for (const x of scoredTracks) {
+    trackArtistScore.set(x.t.artist, Math.max(trackArtistScore.get(x.t.artist) || 0, x.score + 4));
+    trackAlbumScore.set(x.t.albumId, Math.max(trackAlbumScore.get(x.t.albumId) || 0, x.score + 2));
   }
+  const albumScores = new Map();
+  for (const a of S.albums) {
+    const direct = fuzzyScore(`${a.name} ${a.artist}`, q);
+    const viaTrack = trackAlbumScore.get(a.id) || 0;
+    if (direct || viaTrack) albumScores.set(a.id, Math.max(direct, viaTrack));
+  }
+  const albums = S.albums.filter((a) => albumScores.has(a.id))
+    .sort((a, b) => albumScores.get(b.id) - albumScores.get(a.id));
+  const artistScores = new Map();
+  for (const a of S.artists) {
+    const direct = fuzzyScore(a, q);
+    const viaTrack = trackArtistScore.get(a) || 0;
+    if (direct || viaTrack) artistScores.set(a, Math.max(direct, viaTrack));
+  }
+  const artists = S.artists.filter((a) => artistScores.has(a)).sort((a, b) => artistScores.get(b) - artistScores.get(a));
+
+  const semantic = S.searchSemantic && S.searchSemantic.q === q ? S.searchSemantic : null;
+  S.searchIds = [...new Set(tracks.map((t) => t.id).concat((semantic && semantic.ids) || []))];
+
+  const showTracks = S.searchFilter === 'all' || S.searchFilter === 'tracks';
+  const showAlbums = S.searchFilter === 'all' || S.searchFilter === 'albums';
+  const showArtists = S.searchFilter === 'all' || S.searchFilter === 'artists';
 
   let top = null;
-  const exactArtist = artists.find((a) => a.toLowerCase() === ql);
-  if (exactArtist || artists.length) top = { type: 'artist', name: exactArtist || artists[0] };
-  else if (albums.length) top = { type: 'album', album: albums[0] };
-  else if (tracks.length) top = { type: 'album', album: S.albumById.get(tracks[0].albumId) };
+  const exactArtist = artists.find((a) => searchNorm(a) === ql);
+  if (showArtists && (exactArtist || artists.length)) top = { type: 'artist', name: exactArtist || artists[0] };
+  else if (showAlbums && albums.length) top = { type: 'album', album: albums[0] };
+  else if (showTracks && tracks.length) top = { type: 'album', album: S.albumById.get(tracks[0].albumId) };
 
   let topHTML = '';
   if (top && top.type === 'artist') {
     topHTML = `<div class="result-card" data-act="open-artist" data-artist="${attr(top.name)}">
       ${artistArt(top.name)}
-      <div><div class="rc-name">${esc(top.name)}</div><div class="rc-sub">Artist</div></div>
+      <div><div class="rc-name">${esc(top.name)}</div><div class="rc-sub">Artist · ${trackArtistScore.get(top.name) || ''}</div></div>
     </div>`;
   } else if (top && top.album) {
     topHTML = `<div class="result-card" data-act="open-album" data-id="${top.album.id}">
@@ -765,12 +958,15 @@ function viewSearch() {
     </div>`;
   }
 
+  const nothing = !tracks.length && !albums.length && !artists.length && !(semantic && semantic.ids.length);
   return `<div class="view-inner" style="padding-top:10px">
     <div class="section-h2">Search results for “${esc(q)}”</div>
+    ${searchToolsHTML()}
     ${topHTML ? `<div class="results-top">${topHTML}</div>` : ''}
-    ${tracks.length ? `<div class="section-h2">Songs</div>${trackTable(tracks.slice(0, 30).map((t) => t.id), 'search')}` : ''}
-    ${albums.length ? `<div class="section-h2">Albums</div><div class="section"><div class="card-grid">${albums.map(albumCard).join('')}</div></div>` : ''}
-    ${artists.length ? `<div class="section-h2">Artists</div><div class="section"><div class="card-grid">${artists.slice(0, 12).map(artistCard).join('')}</div></div>` : ''}
+    ${nothing ? `<div class="empty" style="padding:40px 0"><h3>No results found for “${esc(q)}”</h3><p>Try a different spelling, or use AI match for a semantic search.</p></div>` : ''}
+    ${showTracks && tracks.length ? `<div class="section-h2">Songs <span class="small-note">${tracks.length}</span></div>${trackTable(tracks.slice(0, 40).map((t) => t.id), 'search')}` : ''}
+    ${showAlbums && albums.length ? `<div class="section-h2">Albums</div><div class="section"><div class="card-grid">${albums.map(albumCard).join('')}</div></div>` : ''}
+    ${showArtists && artists.length ? `<div class="section-h2">Artists</div><div class="section"><div class="card-grid">${artists.slice(0, 16).map(artistCard).join('')}</div></div>` : ''}
   </div>`;
 }
 
@@ -833,10 +1029,12 @@ function viewAlbum(id) {
 function viewDj() {
   const d = S.dj;
   const st = S.djStatus;
-  const statusText = !st ? 'Checking Ollama…'
-    : st.available ? `Powered by Ollama · ${st.model}`
-    : st.running ? 'Ollama running · no models installed'
-    : (STATIC ? 'Web build · offline DJ picks' : 'Ollama offline · built-in DJ picks');
+  const providerName = st && st.provider === 'groq' ? 'Groq' : 'Ollama';
+  const statusText = window.STATIC_MODE ? 'Web build · offline DJ picks'
+    : !st ? 'Checking AI provider…'
+    : st.available ? `Powered by ${providerName} · ${st.model}`
+    : st.running ? `${providerName} running · no models available`
+    : (st.provider === 'groq' ? 'Groq offline · built-in DJ picks' : 'Ollama offline · built-in DJ picks');
   const statusClass = st && st.available ? 'ok' : 'warn';
   const moods = ['Chill', 'Hype', 'Late night', 'Discover'];
   const chips = moods.map((m) => `<button class="chip ${d.mood === m ? 'active' : ''}" data-act="dj-mood" data-mood="${m}">${m}</button>`).join('');
@@ -859,10 +1057,22 @@ function viewDj() {
       <div class="dj-meta">
         <div class="hero-label">Made for you</div>
         <div class="hero-title">AI DJ</div>
-        <div class="hero-desc">A continuous set from your own library${d.source === 'ollama' ? ', picked by your local Ollama model' : ''}, with spoken intros between tracks.</div>
+        <div class="hero-desc">A continuous set from your own library${d.source === 'ollama' ? ', picked by your local Ollama model' : d.source === 'groq' ? ', picked by Groq' : ''}, with spoken intros between tracks.</div>
         <div class="dj-status ${statusClass}">${esc(statusText)}</div>
-        ${st && !st.available ? `<div class="small-note" style="margin-top:8px">${esc(STATIC ? 'The web build uses offline picks. Run the local Spotifly server when you want the 12B DJ, MAEST labels and semantic retrieval.' : (st.running ? 'Ollama is running but no models are available.' : 'Ollama is not reachable. If your models live on an external SSD, reconnect it and reopen this page.'))}</div>` : ''}
+        ${st && !st.available ? `<div class="small-note" style="margin-top:8px">${esc(window.STATIC_MODE ? 'The web build uses offline picks. Run the local server for the AI DJ and semantic search.' : (st.provider === 'groq' ? (st.error || 'Groq unavailable — using offline picks.') : (st.running ? 'Ollama is running but no models are available.' : 'Ollama is not reachable. If your models live on an external SSD, reconnect it and reopen this page.')))}</div>` : ''}
         <div class="chip-row" style="padding:16px 0 0">${chips}</div>
+        ${(() => {
+          const s = Object.values(S.djFeedback.tracks).reduce((n, f) => n + (Number(f.skips) || 0), 0);
+          const n = S.djFeedback.never.length;
+          const a = S.djFeedback.lessArtists.length;
+          const g = S.djFeedback.lessGenres.length;
+          const bits = [];
+          if (s) bits.push(`${s} skip${s === 1 ? '' : 's'}`);
+          if (n) bits.push(`${n} banned track${n === 1 ? '' : 's'}`);
+          if (a) bits.push(`${a} artist filter${a === 1 ? '' : 's'}`);
+          if (g) bits.push(`${g} genre filter${g === 1 ? '' : 's'}`);
+          return bits.length ? `<div class="small-note">DJ memory: ${bits.join(' · ')}</div>` : '';
+        })()}
         <div class="dj-actions">
           <button class="bigplay" data-act="${d.active ? 'toggle-play' : 'start-dj'}" title="${d.active ? (S.playing ? 'Pause' : 'Play') : 'Start AI DJ'}">${d.active && S.playing ? ICON.pause : ICON.play}</button>
           ${d.tracks.length ? `<button class="btn ghost" data-act="new-dj">New set</button>` : ''}
@@ -885,9 +1095,9 @@ function viewDj() {
         <button class="chip" data-act="dj-ask" data-text="more like this">more like this</button>
       </div>
     </div>
-    ${S.djBusy ? `<div class="dj-busy"><div class="dj-bars"><i></i><i></i><i></i><i></i></div><div><b>Building your set…</b><span>The local model can take up to three minutes on a cold start.</span></div></div>` : ''}
+    ${S.djBusy ? `<div class="dj-busy"><div class="dj-bars"><i></i><i></i><i></i><i></i></div><div><b>Building your set…</b><span>${window.STATIC_MODE ? 'Picking tracks from your scanned folder.' : 'The AI model can take up to three minutes on a cold start.'}</span></div></div>` : ''}
     ${d.tracks.length && !S.djBusy ? `<div class="dj-panel">
-      <div class="sec-head" style="margin:0 0 10px"><h2>${d.active ? 'Now playing' : 'Last set'}</h2><span class="small-note">${d.source === 'ollama' ? 'Ollama · ' + esc(d.model || '') : 'Offline picks'}${d.retrieval ? ' · ' + d.retrieval + ' candidates' : ''}${d.fetching ? ' · picking more…' : ''}</span></div>
+      <div class="sec-head" style="margin:0 0 10px"><h2>${d.active ? 'Now playing' : 'Last set'}</h2><span class="small-note">${d.source === 'ollama' ? 'Ollama · ' + esc(d.model || '') : d.source === 'groq' ? 'Groq · ' + esc(d.model || '') : 'Offline picks'}${d.retrieval ? ' · ' + d.retrieval + ' candidates' : ''}${d.fetching ? ' · picking more…' : ''}</span></div>
       ${d.intro ? `<div class="dj-intro">${esc(d.intro)}</div>` : ''}
       <div class="dj-lines">${lines}</div>
       ${d.outro ? `<div class="dj-outro">${esc(d.outro)}</div>` : ''}
@@ -1070,6 +1280,9 @@ function openRowMenu(btn, id, ctxKey) {
   const audioLabels = t.audio && t.audio.labels && t.audio.labels.length
     ? `<div class="rm-tags">${t.audio.labels.slice(0, 3).map((l) => esc(String(l.label || '').replace(/---/g, ' / '))).join(' · ')}</div>`
     : '';
+  const genre = feedbackGenre(t);
+  const lessArtist = S.djFeedback.lessArtists.some((x) => String(x).toLowerCase() === String(t.artist).toLowerCase());
+  const lessGenre = genre && S.djFeedback.lessGenres.some((x) => String(x).toLowerCase() === String(genre).toLowerCase());
   menu.innerHTML = `<div class="rm-head"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span>${audioLabels}</div>
     <button data-act="menu-queue">Add to queue</button>
     <button data-act="menu-next">Play next</button>
@@ -1079,6 +1292,9 @@ function openRowMenu(btn, id, ctxKey) {
     ${plButtons}
     <button data-act="menu-new">＋ New playlist</button>
     <div class="rm-sep"></div>
+    <button data-act="menu-never">${S.djFeedback.never.includes(id) ? 'Allow again' : 'Never play again'}</button>
+    <button data-act="menu-less-artist">${lessArtist ? 'Allow artist again' : 'Less like this artist'}</button>
+    ${genre ? `<button data-act="menu-less-genre">${lessGenre ? 'Allow genre again' : 'Less like ' + esc(genre)}</button>` : ''}
     <button data-act="menu-album">Go to album</button>
     <button data-act="menu-artist">Go to artist</button>
     ${curPl ? `<div class="rm-sep"></div><button class="danger" data-act="menu-remove">Remove from “${esc(curPl.name)}”</button>` : ''}`;
@@ -1144,6 +1360,7 @@ async function extendDjQueue() {
         request: S.dj.request || '',
         currentId: S.currentId || '',
         exclude,
+        feedback: S.djFeedback,
       }),
     });
     const j = await res.json();
@@ -1213,6 +1430,7 @@ async function startDj(opts = {}) {
         mood: S.dj.mood || '',
         request: S.dj.request || '',
         currentId: S.currentId || '',
+        feedback: S.djFeedback,
       }),
     });
     if (!res.ok) throw new Error('status ' + res.status);
@@ -1234,7 +1452,7 @@ async function startDj(opts = {}) {
       lines: Object.fromEntries(j.tracks.map((t) => [t.id, t.line || ''])),
     };
     if (j.status) S.djStatus = j.status;
-    if (j.source !== 'ollama') toast(STATIC ? 'Web build — using offline DJ picks' : 'Ollama unavailable — using the built-in DJ', 3600);
+    if (j.source === 'fallback') toast('AI unavailable — using the built-in DJ', 3600);
     S.djSpokenFor = null;
     S.lastDjHighlight = null;
     S.djBusy = false;
@@ -1545,17 +1763,132 @@ async function loadSettingsStats() {
   renderSettingsStats();
 }
 
+async function loadIndexHealth() {
+  try {
+    const r = await fetch('/api/index/health?ts=' + Date.now());
+    S.indexHealth = await r.json();
+  } catch {
+    S.indexHealth = null;
+  }
+  if (S.view.type === 'library') render(false);
+  if (!$('#settings-modal').classList.contains('hidden')) renderSettingsStats();
+  clearTimeout(S.indexTimer);
+  if (S.indexHealth && S.indexHealth.status && S.indexHealth.status.running) {
+    S.indexTimer = setTimeout(loadIndexHealth, 3000);
+  }
+}
+
+async function startIndexFix() {
+  try {
+    const r = await fetch('/api/index/start', { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) { toast(j.error || 'Could not start indexer'); return; }
+    toast('Indexing started — labels, tags and embeddings');
+    setTimeout(loadIndexHealth, 1200);
+  } catch {
+    toast('Could not start indexer');
+  }
+}
+
+function indexHealthHTML() {
+  const h = S.indexHealth;
+  if (!h) return '<div class="small-note">Index status unavailable.</div>';
+  const st = h.status || {};
+  const missing = h.missing || {};
+  const missingTotal = (missing.audioLabels || 0) + (missing.llmTags || 0) + (missing.embeddings || 0);
+  const running = !!st.running;
+  return `<div class="index-health">
+    <div class="settings-grid">
+      <div><span>Audio labels</span><b>${h.counts.audioLabels}/${h.tracks}</b></div>
+      <div><span>LLM tags</span><b>${h.counts.llmTags}/${h.tracks}</b></div>
+      <div><span>Embeddings</span><b>${h.counts.embeddings}/${h.tracks}</b></div>
+      <div><span>State</span><b>${running ? 'indexing' : missingTotal ? 'incomplete' : 'ready'}</b><em>${running && st.stage ? esc(st.stage) : ''}</em></div>
+    </div>
+    <div class="index-actions">
+      <span class="small-note">${missingTotal ? `${missingTotal} missing item${missingTotal === 1 ? '' : 's'}` : 'Everything indexed'}</span>
+      <button class="btn ghost" data-act="start-index" ${running ? 'disabled' : ''}>${running ? 'Indexing…' : 'Fix index'}</button>
+    </div>
+    ${st.error ? `<div class="small-note">Index error: ${esc(st.error)}</div>` : ''}
+  </div>`;
+}
+
+async function loadAiSettings() {
+  try {
+    const r = await fetch('/api/ai/status?ts=' + Date.now());
+    S.settingsAi = await r.json();
+  } catch {
+    S.settingsAi = null;
+  }
+  renderSettingsStats();
+}
+
 function renderSettingsStats() {
   const el = $('#settings-stats');
   if (!el) return;
   const d = S.settingsDebug;
-  if (!d) { el.innerHTML = '<div class="small-note">Could not read debug stats.</div>'; return; }
-  el.innerHTML = `<div class="settings-grid">
+  let html = d ? `<div class="settings-grid">
     <div><span>Tracks</span><b>${d.counts.tracks}</b></div>
     <div><span>Audio labels</span><b>${d.counts.audioLabels}</b></div>
     <div><span>LLM tags</span><b>${d.counts.llmTags}</b></div>
     <div><span>Embeddings</span><b>${d.embeddings ? d.embeddings.count : 0}</b><em>${d.embeddings ? d.embeddings.model : '—'}</em></div>
-  </div>`;
+  </div>` : '<div class="small-note">Could not read debug stats.</div>';
+
+  if (!window.STATIC_MODE) {
+    html += indexHealthHTML();
+    const st = S.settingsAi;
+    if (!st) {
+      html += '<div class="small-note">Loading AI settings…</div>';
+    } else {
+      const cfg = st.config || {};
+      const provider = cfg.provider || st.provider || 'groq';
+      const models = st.models || [];
+      const model = st.model || cfg.model || '';
+      const modelOpts = (models.includes(model) ? models : [model, ...models].filter(Boolean))
+        .map((m) => `<option value="${esc(m)}" ${m === model ? 'selected' : ''}>${esc(m)}</option>`).join('');
+      const u = st.usage || {};
+      const perModel = Object.entries(u.byModel || {}).map(([m, x]) => `${esc(m)}: ${x.calls} calls / ${x.totalTokens} tok`).join(' · ');
+      html += `<div class="settings-ai">
+        <h3>AI provider</h3>
+        <div class="ai-form">
+          <label><span>Provider</span><select id="ai-provider">
+            <option value="groq" ${provider === 'groq' ? 'selected' : ''}>Groq</option>
+            <option value="ollama" ${provider === 'ollama' ? 'selected' : ''}>Ollama</option>
+          </select></label>
+          <label><span>Model</span><select id="ai-model">${modelOpts}</select></label>
+          <button class="btn ghost" data-act="ai-save">Save AI settings</button>
+        </div>
+        <div class="small-note">${st.available ? 'Online' : esc(st.error || 'Offline')} · ${u.calls || 0} calls · ${u.totalTokens || 0} tokens${perModel ? ' · ' + perModel : ''}</div>
+        <div class="small-note">The API key stays in the server environment/Keychain. Switching provider applies immediately.</div>
+      </div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+async function saveAiSettings() {
+  const providerEl = $('#ai-provider');
+  const modelEl = $('#ai-model');
+  if (!providerEl) return;
+  const current = (S.settingsAi && (S.settingsAi.config || {}).provider) || (S.settingsAi && S.settingsAi.provider);
+  const provider = providerEl.value;
+  const model = provider === current && modelEl ? modelEl.value : '';
+  try {
+    const r = await fetch('/api/ai/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not save');
+    S.settingsAi = j;
+    S.djStatus = j;
+    S.djWarmed = false;
+    renderSettingsStats();
+    if (S.view.type === 'dj') loadDjStatus();
+    toast('AI settings saved · ' + (j.model || provider));
+  } catch (e) {
+    toast(String(e.message || 'Could not save AI settings'));
+  }
 }
 
 function openSettings() {
@@ -1565,6 +1898,7 @@ function openSettings() {
   modal.classList.remove('hidden');
   renderSettingsStats();
   loadSettingsStats();
+  if (!window.STATIC_MODE) { loadAiSettings(); loadIndexHealth(); }
 }
 
 function closeSettings() {
@@ -1633,7 +1967,7 @@ function viewLibrary() {
       <div class="lib-head-actions">
         <button class="btn ghost" data-act="open-ai-playlist">AI playlist</button>
         <button class="btn ghost" data-act="new-playlist">New playlist</button>
-        ${STATIC ? '' : `<button class="btn ghost" data-act="start-embed">Embed library</button>
+        ${window.STATIC_MODE ? '' : `<button class="btn ghost" data-act="start-embed">Embed library</button>
         <button class="btn ghost" data-act="start-tags">Tag library</button>
         <button class="btn ghost" data-act="start-audio-tags">Audio labels</button>
         <button class="btn ghost" data-act="open-import">Import playlist</button>`}
@@ -1645,7 +1979,11 @@ function viewLibrary() {
       <button class="tab ${tab === 'artists' ? 'active' : ''}" data-act="lib-tab" data-tab="artists">Artists</button>
     </div>
     <div class="section">${content}</div>
-    <div class="section"><div class="small-note">${S.tracks.length} songs · ${S.albums.length} albums · ${S.statsHours || 0}h of music${S.lib && S.lib.generatedAt ? ' · scanned ' + fmtDate(S.lib.generatedAt) : ''}</div></div>
+    <div class="section"><div class="small-note">${S.tracks.length} songs · ${S.albums.length} albums · ${S.statsHours || 0}h of music${S.lib && S.lib.generatedAt ? ' · scanned ' + fmtDate(S.lib.generatedAt) : ''}</div>
+    ${window.STATIC_MODE ? '' : indexHealthHTML()}
+    ${S.tagsStatus ? `<div class="small-note">AI tags: ${S.tagsStatus.count || 0}/${S.tracks.length}${S.tagsStatus.running ? ' · tagging ' + (S.tagsStatus.done || 0) + '/' + (S.tagsStatus.total || S.tracks.length) + '…' : ''}</div>` : ''}
+    ${S.embedStatus ? `<div class="small-note">Semantic index: ${S.embedStatus.count || 0}/${S.tracks.length}${S.embedStatus.running ? ' · embedding ' + (S.embedStatus.done || 0) + '/' + (S.embedStatus.total || S.tracks.length) + '…' : S.embedStatus.exists ? ' · ready' : ''}</div>` : ''}
+    ${S.audioStatus ? `<div class="small-note">Audio labels: ${S.audioStatus.count || 0}/${S.tracks.length}${S.audioStatus.running ? ' · labeling ' + (S.audioStatus.done || 0) + '/' + (S.audioStatus.total || S.tracks.length) + '…' : ' · ready'}</div>` : ''}</div>
   </div>`;
 }
 
@@ -1887,6 +2225,11 @@ function loadCurrent(autoplay) {
   const id = S.queue[S.qIndex];
   const t = S.trackById.get(id);
   if (!t) return;
+  const prevId = S.currentId;
+  if (prevId && prevId !== id) {
+    const played = S.audio.currentTime || 0;
+    if (played > 5 && played < 25) bumpFeedbackSkip(prevId);
+  }
   S.currentId = id;
   S.pendingCount = !!autoplay;
   S.audio.src = window.LOCAL_MEDIA ? window.LOCAL_MEDIA.mediaUrl(id) : '/api/stream/' + id;
@@ -2322,6 +2665,8 @@ async function loadLibrary() {
   S.plays = Object.fromEntries(Object.entries(S.plays).filter(([id]) => valid.has(id)));
   S.userPlaylists = S.userPlaylists.map((pl) => ({ ...pl, trackIds: (pl.trackIds || []).filter((id) => valid.has(id)) }));
   S.history = S.history.filter((h) => valid.has(h.id)).slice(0, 1000);
+  S.djFeedback.tracks = Object.fromEntries(Object.entries(S.djFeedback.tracks).filter(([id]) => valid.has(id)));
+  S.djFeedback.never = S.djFeedback.never.filter((id) => valid.has(id));
 
   let seeded = new Set();
   try { seeded = new Set(JSON.parse(localStorage.getItem('spotifly:likedSeed') || '[]')); } catch { /* ignore */ }
@@ -2372,6 +2717,7 @@ async function loadLibrary() {
     S.audio.removeAttribute('src');
   }
   render(true);
+  if (!window.STATIC_MODE) loadIndexHealth();
 }
 
 function openAiPlaylistModal() {
@@ -2398,12 +2744,12 @@ async function runAiPlaylist() {
   const result = $('#ai-playlist-result');
   btn.disabled = true;
   btn.textContent = 'Creating…';
-  result.innerHTML = `<div class="small-note">${STATIC ? 'Picking tracks from your scanned folder…' : 'The local model is picking tracks — the 12B model can take a few minutes.'}</div>`;
+  result.innerHTML = '<div class="small-note">The AI model is picking tracks…</div>';
   try {
     const res = await fetch('/api/playlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: promptText }),
+      body: JSON.stringify({ prompt: promptText, feedback: S.djFeedback }),
     });
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || 'Could not create playlist');
@@ -2518,6 +2864,7 @@ async function rescan(btn) {
     const j = await res.json();
     if (j.ok) {
       await loadLibrary();
+      if (!window.STATIC_MODE) setTimeout(loadIndexHealth, 1500);
       toast(`Library updated · ${S.tracks.length} tracks · ${S.albums.length} albums`);
     } else {
       toast(j.error || 'Scan failed');
@@ -2603,6 +2950,8 @@ document.addEventListener('click', (e) => {
   }
   if (act === 'back') { goBack(); return; }
   if (act === 'forward') { goForward(); return; }
+  if (act === 'search-filter') { S.searchFilter = el.dataset.filter || 'all'; render(false); return; }
+  if (act === 'search-semantic') { runSemanticSearch(); return; }
   if (act === 'stats-tab') { S.statsTab = el.dataset.tab || 'tracks'; render(false); return; }
   if (act === 'stats-range') { S.statsRange = el.dataset.range === 'month' ? 'month' : 'all'; render(false); return; }
   if (act === 'clear-history') { clearHistory(); return; }
@@ -2621,6 +2970,10 @@ document.addEventListener('click', (e) => {
     closeRowMenu();
     return;
   }
+  if (act === 'menu-never') { if (S.rowMenu) { toggleNever(S.rowMenu.id); closeRowMenu(); } return; }
+  if (act === 'menu-less-artist') { if (S.rowMenu) { toggleLess('artist', S.rowMenu.id); closeRowMenu(); } return; }
+  if (act === 'menu-less-genre') { if (S.rowMenu) { toggleLess('genre', S.rowMenu.id); closeRowMenu(); } return; }
+  if (act === 'clear-dj-feedback') { clearDjFeedback(); return; }
   if (act === 'menu-album') {
     const id = S.rowMenu && S.rowMenu.id;
     closeRowMenu();
@@ -2638,6 +2991,8 @@ document.addEventListener('click', (e) => {
   if (act === 'new-playlist') { newPlaylistPrompt(); return; }
   if (act === 'start-tags') { startTagging(); return; }
   if (act === 'start-audio-tags') { startAudioTags(); return; }
+  if (act === 'start-index') { startIndexFix(); return; }
+  if (act === 'ai-save') { saveAiSettings(); return; }
   if (act === 'open-settings') { openSettings(); return; }
   if (act === 'close-settings') { closeSettings(); return; }
   if (act === 'refresh-debug') { loadDebug(); return; }
@@ -2805,6 +3160,7 @@ $('#import-file').addEventListener('change', (e) => {
 
 $('#search').addEventListener('input', (e) => {
   S.query = e.target.value;
+  if (S.searchSemantic && S.searchSemantic.q !== S.query.trim()) S.searchSemantic = null;
   if (S.view.type !== 'search') nav({ type: 'search' }, { replace: false });
   else render(false);
 });
@@ -2814,6 +3170,13 @@ $('#search').addEventListener('focus', () => {
 });
 
 $('#debug-toggle').addEventListener('change', (e) => setDebug(e.target.checked));
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'search-source') {
+    S.searchSource = e.target.value || '';
+    render(false);
+  }
+});
 
 $('#np-artist').addEventListener('click', () => {
   const t = currentTrack();
@@ -2844,6 +3207,17 @@ window.localReload = () => loadLibrary().catch(() => {});
     const hist = JSON.parse(localStorage.getItem('spotifly:history') || '[]');
     if (Array.isArray(hist)) {
       S.history = hist.filter((h) => h && h.id && Number.isFinite(h.at)).slice(0, 1000);
+    }
+  } catch { /* ignore */ }
+  try {
+    const fb = JSON.parse(localStorage.getItem('spotifly:djFeedback') || '{}');
+    if (fb && typeof fb === 'object') {
+      S.djFeedback = {
+        tracks: fb.tracks && typeof fb.tracks === 'object' ? fb.tracks : {},
+        never: Array.isArray(fb.never) ? fb.never : [],
+        lessArtists: Array.isArray(fb.lessArtists) ? fb.lessArtists : [],
+        lessGenres: Array.isArray(fb.lessGenres) ? fb.lessGenres : [],
+      };
     }
   } catch { /* ignore */ }
   try {

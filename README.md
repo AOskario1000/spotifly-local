@@ -18,14 +18,18 @@ Firefox fall back to a folder input each visit.
 
 - Library scan, tags/cover art from files, album/artist grouping
 - Playback, queue, shuffle/repeat, likes, playlists, history, most heard
-- Offline AI DJ / AI playlist picks (heuristic, no LLM)
+- Fuzzy search with source filters
+- DJ feedback: skip learning, never-play bans, less-of-this-artist/genre
+- Offline AI DJ / AI playlist picks (heuristic, no LLM, feedback-aware)
 - Debug mode and the label explorer (file metadata only)
+- Installable PWA with an app-shell service worker
 
 ## What needs the full server build
 
-- Gemini/Gemma DJ, Ollama chat, arrival audio
-- MAEST audio labels, LLM tags, embeddings and semantic retrieval
-- Spotify CSV import, server-side AI playlists
+- Gemini/Gemma/Groq/Qwen DJ, Ollama chat, spoken intros
+- MAEST audio labels, LLM tags, embeddings and semantic/AI search
+- Spotify CSV import, server-side AI playlists, index health and auto-reindex
+- Provider/model switching and token usage (Settings)
 
 The local server build lives one directory up; this folder is intentionally
 self-contained for GitHub Pages.
